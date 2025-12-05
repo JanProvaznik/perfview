@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using PerfView.MCPServer.Utilities;
 using System.Threading.Tasks;
 
 namespace PerfView.MCPServer;
@@ -29,7 +30,21 @@ public class Program
             .AddMcpServer()
             .WithStdioServerTransport()
             .WithToolsFromAssembly(); // This will discover all [McpServerTool] methods
+
+        var host = builder.Build();
         
-        await builder.Build().RunAsync();
+        // Log privilege status on startup
+        var logger = host.Services.GetRequiredService<ILogger<Program>>();
+        if (PrivilegeElevation.IsAdministrator())
+        {
+            logger.LogInformation("PerfView MCP Server starting with administrator privileges");
+        }
+        else
+        {
+            logger.LogWarning("PerfView MCP Server starting without administrator privileges");
+            logger.LogWarning("Trace collection features will require privilege elevation");
+        }
+        
+        await host.RunAsync();
     }
 }

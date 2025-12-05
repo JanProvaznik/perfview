@@ -4,6 +4,7 @@ using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
 using Microsoft.Diagnostics.Tracing.Session;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using PerfView.MCPServer.Utilities;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -26,7 +27,7 @@ public class TraceTools
     private static readonly ConcurrentDictionary<string, TraceEventSession> _activeSessions = new();
 
     [McpServerTool(Name = "collect_cpu_trace")]
-    [Description("Collects a CPU sampling trace for performance analysis. Requires administrator privileges on Windows.")]
+    [Description("Collects a CPU sampling trace for performance analysis. Will check for administrator privileges.")]
     public static async Task<string> CollectCpuTrace(
         ILogger<TraceTools> logger,
         [Description("Duration in seconds to collect the trace")] int durationSeconds = 30,
@@ -35,6 +36,13 @@ public class TraceTools
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Starting CPU trace collection for {Duration}s to {Path}", durationSeconds, outputPath);
+
+        // Check for administrator privileges
+        if (!PrivilegeElevation.IsAdministrator())
+        {
+            logger.LogWarning("CPU trace collection requires administrator privileges");
+            return $"ERROR: Administrator privileges required.\n\n{PrivilegeElevation.GetElevationInstructions()}";
+        }
 
         TraceEventSession? session = null;
         var sessionName = $"PerfView_MCP_{Guid.NewGuid():N}";
@@ -73,13 +81,7 @@ public class TraceTools
         catch (UnauthorizedAccessException)
         {
             logger.LogError("Failed to collect trace: Administrator privileges required");
-            return "ERROR: Administrator privileges are required to collect CPU traces on Windows.\n\n" +
-                   "Please run the MCP server with elevated permissions:\n" +
-                   "1. Close the current MCP client\n" +
-                   "2. Run terminal/PowerShell as Administrator\n" +
-                   "3. Restart the MCP server\n" +
-                   "4. Reconnect your MCP client\n\n" +
-                   "Note: Future versions will support just-in-time privilege escalation via UAC prompts.";
+            return $"ERROR: Insufficient privileges for trace collection.\n\n{PrivilegeElevation.GetElevationInstructions()}";
         }
         catch (Exception ex)
         {

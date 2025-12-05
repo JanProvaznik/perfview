@@ -214,9 +214,43 @@ AI: [Calls query_events with provider filter]
 
 ## Privilege Escalation
 
-**Note**: Trace collection requires administrator privileges on Windows. If you encounter permission errors, the server will provide clear instructions.
+The server implements intelligent privilege checking:
 
-Future enhancement: Just-in-time privilege escalation via User Account Control (UAC) prompts when needed.
+### Automatic Privilege Detection
+- On startup, the server detects if running with administrator/root privileges
+- Logs privilege status to help diagnose permission issues
+- Each tool that requires elevation checks privileges before execution
+
+### Just-in-Time Privilege Checking
+When you attempt to collect a trace without administrator privileges:
+
+1. **Privilege Check**: The server checks current privilege level
+2. **Clear Instructions**: If not elevated, provides step-by-step guidance
+3. **Platform-Aware**: Different instructions for Windows (Administrator) vs Linux/macOS (sudo)
+
+**Example Error Message:**
+```
+Administrator privileges are required for this operation.
+
+To run with elevated permissions:
+1. Close your MCP client (e.g., Claude Desktop)
+2. Open a new terminal as Administrator
+3. Navigate to the PerfView.MCPServer directory
+4. Run: dotnet run
+5. Reconnect your MCP client
+```
+
+### Why Not UAC Prompts?
+
+Direct UAC-based privilege escalation (showing a UAC dialog mid-operation) is challenging in the MCP server context because:
+- The server communicates via stdin/stdout with the MCP client
+- Spawning an elevated child process breaks the communication channel
+- The MCP protocol doesn't have a standard mechanism for mid-session elevation
+
+The current implementation provides the best user experience within these constraints by:
+- Detecting privileges upfront
+- Providing clear, actionable instructions
+- Maintaining a stable MCP connection
 
 ## Troubleshooting
 
