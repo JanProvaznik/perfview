@@ -5,6 +5,7 @@ using Microsoft.Diagnostics.Tracing.Session;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -22,8 +23,7 @@ namespace PerfView.MCPServer.Tools;
 [McpServerToolType]
 public class TraceTools
 {
-    private static readonly Dictionary<string, TraceEventSession> _activeSessions = new();
-    private static readonly object _sessionLock = new();
+    private static readonly ConcurrentDictionary<string, TraceEventSession> _activeSessions = new();
 
     [McpServerTool(Name = "collect_cpu_trace")]
     [Description("Collects a CPU sampling trace for performance analysis. Requires administrator privileges on Windows.")]
@@ -36,13 +36,15 @@ public class TraceTools
     {
         logger.LogInformation("Starting CPU trace collection for {Duration}s to {Path}", durationSeconds, outputPath);
 
+        TraceEventSession? session = null;
+        var sessionName = $"PerfView_MCP_{Guid.NewGuid():N}";
+        
         try
         {
             var absolutePath = Path.GetFullPath(outputPath);
-            var sessionName = $"PerfView_MCP_{Guid.NewGuid():N}";
 
             // Create trace session
-            using var session = new TraceEventSession(sessionName, absolutePath)
+            session = new TraceEventSession(sessionName, absolutePath)
             {
                 StopOnDispose = true
             };
@@ -54,21 +56,14 @@ public class TraceTools
                 KernelTraceEventParser.Keywords.Thread | 
                 KernelTraceEventParser.Keywords.ImageLoad);
 
-            lock (_sessionLock)
-            {
-                _activeSessions[sessionName] = session;
-            }
+            // Track active session
+            _activeSessions.TryAdd(sessionName, session);
 
             // Collect for specified duration
             await Task.Delay(TimeSpan.FromSeconds(durationSeconds), cancellationToken);
 
             // Stop the session
             session.Stop();
-
-            lock (_sessionLock)
-            {
-                _activeSessions.Remove(sessionName);
-            }
 
             var fileInfo = new FileInfo(absolutePath);
             logger.LogInformation("CPU trace collected successfully: {Size} MB", fileInfo.Length / 1024.0 / 1024.0);
@@ -84,6 +79,15 @@ public class TraceTools
         {
             logger.LogError(ex, "Failed to collect CPU trace");
             return $"ERROR: Failed to collect CPU trace: {ex.Message}";
+        }
+        finally
+        {
+            // Ensure session is removed from tracking and disposed
+            if (session != null)
+            {
+                _activeSessions.TryRemove(sessionName, out _);
+                session.Dispose();
+            }
         }
     }
 

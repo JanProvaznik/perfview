@@ -5,8 +5,12 @@
 
 echo "Testing PerfView MCP Server..." >&2
 
+# Get script directory and project path
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_PATH="$SCRIPT_DIR/PerfView.MCPServer.csproj"
+
 # Start the server in the background
-dotnet run --project /home/runner/work/perfview/perfview/src/PerfView.MCPServer/PerfView.MCPServer.csproj &
+dotnet run --project "$PROJECT_PATH" &
 SERVER_PID=$!
 
 # Give it time to start
