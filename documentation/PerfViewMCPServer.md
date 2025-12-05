@@ -1,5 +1,9 @@
 # PerfView MCP Server Specification
 
+> **✅ IMPLEMENTATION STATUS**: The PerfView MCP Server is now **functional and operational**!  
+> Version 0.4.0-preview.3 is implemented with working trace collection and analysis tools.  
+> See [README_USAGE.md](../src/PerfView.MCPServer/README_USAGE.md) for usage instructions.
+
 ## Overview
 
 The PerfView MCP (Model Context Protocol) Server provides AI assistants and developer tools with programmatic access to PerfView's powerful performance analysis and diagnostic capabilities. This enables intelligent automation of performance investigations, trace analysis, and memory profiling workflows.
