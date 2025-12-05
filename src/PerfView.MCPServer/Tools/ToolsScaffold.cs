@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System;
 using System.Text.Json;
 
 namespace PerfView.MCPServer.Tools;
@@ -28,36 +29,82 @@ public class PerfViewTools
     {
         _logger.LogInformation("CollectCpuTrace called");
         
-        var durationSeconds = parameters.GetProperty("duration_seconds").GetDouble();
-        var outputPath = parameters.GetProperty("output_path").GetString();
-        
-        var result = new
+        try
         {
-            status = "success",
-            message = $"CPU trace collection simulated for {durationSeconds} seconds",
-            trace_path = outputPath,
-            note = "Placeholder implementation - integrate with TraceEvent library"
-        };
+            if (!parameters.TryGetProperty("duration_seconds", out var durationElem))
+            {
+                throw new ArgumentException("Missing required parameter: duration_seconds");
+            }
+            if (!parameters.TryGetProperty("output_path", out var outputElem))
+            {
+                throw new ArgumentException("Missing required parameter: output_path");
+            }
+            
+            var durationSeconds = durationElem.GetDouble();
+            var outputPath = outputElem.GetString();
+            
+            var result = new
+            {
+                status = "success",
+                message = $"CPU trace collection simulated for {durationSeconds} seconds",
+                trace_path = outputPath,
+                note = "Placeholder implementation - integrate with TraceEvent library"
+            };
 
-        return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+            return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in CollectCpuTrace");
+            var errorResult = new
+            {
+                status = "error",
+                error_code = "INVALID_PARAMETERS",
+                message = ex.Message
+            };
+            return JsonSerializer.Serialize(errorResult, new JsonSerializerOptions { WriteIndented = true });
+        }
     }
 
     public string CollectMemoryTrace(JsonElement parameters)
     {
         _logger.LogInformation("CollectMemoryTrace called");
         
-        var processName = parameters.GetProperty("process_name").GetString();
-        var outputPath = parameters.GetProperty("output_path").GetString();
-        
-        var result = new
+        try
         {
-            status = "success",
-            message = $"Memory snapshot simulated for process {processName}",
-            snapshot_path = outputPath,
-            note = "Placeholder implementation - integrate with heap dumping APIs"
-        };
+            if (!parameters.TryGetProperty("process_name", out var processElem))
+            {
+                throw new ArgumentException("Missing required parameter: process_name");
+            }
+            if (!parameters.TryGetProperty("output_path", out var outputElem))
+            {
+                throw new ArgumentException("Missing required parameter: output_path");
+            }
+            
+            var processName = processElem.GetString();
+            var outputPath = outputElem.GetString();
+            
+            var result = new
+            {
+                status = "success",
+                message = $"Memory snapshot simulated for process {processName}",
+                snapshot_path = outputPath,
+                note = "Placeholder implementation - integrate with heap dumping APIs"
+            };
 
-        return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+            return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in CollectMemoryTrace");
+            var errorResult = new
+            {
+                status = "error",
+                error_code = "INVALID_PARAMETERS",
+                message = ex.Message
+            };
+            return JsonSerializer.Serialize(errorResult, new JsonSerializerOptions { WriteIndented = true });
+        }
     }
 
     // ==================== Trace Analysis Tools ====================

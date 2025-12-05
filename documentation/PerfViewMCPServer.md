@@ -78,7 +78,7 @@ Model Context Protocol (MCP) is an open protocol that enables seamless integrati
 
 ### Technology Stack
 
-- **Platform**: .NET 6.0+ (for modern cross-platform support)
+- **Platform**: .NET 8.0 (for modern cross-platform support and latest language features)
 - **MCP Library**: ModelContextProtocol 0.4.1-preview.1
 - **Core Dependencies**: 
   - Microsoft.Diagnostics.Tracing.TraceEvent (ETW/EventPipe trace parsing)
