@@ -73,7 +73,13 @@ public class TraceTools
         catch (UnauthorizedAccessException)
         {
             logger.LogError("Failed to collect trace: Administrator privileges required");
-            return "ERROR: Administrator privileges are required to collect CPU traces on Windows. Please run the MCP server with elevated permissions.";
+            return "ERROR: Administrator privileges are required to collect CPU traces on Windows.\n\n" +
+                   "Please run the MCP server with elevated permissions:\n" +
+                   "1. Close the current MCP client\n" +
+                   "2. Run terminal/PowerShell as Administrator\n" +
+                   "3. Restart the MCP server\n" +
+                   "4. Reconnect your MCP client\n\n" +
+                   "Note: Future versions will support just-in-time privilege escalation via UAC prompts.";
         }
         catch (Exception ex)
         {

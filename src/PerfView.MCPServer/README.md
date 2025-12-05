@@ -1,234 +1,276 @@
 # PerfView MCP Server
 
-An AI-accessible performance analysis server that exposes PerfView's capabilities through the Model Context Protocol (MCP).
-
-## Overview
-
-The PerfView MCP Server allows AI assistants (like Claude) to automate performance investigations, trace analysis, and memory profiling. It bridges the gap between AI-powered development tools and PerfView's powerful diagnostic capabilities.
-
-## Features
-
-### Trace Collection
-- **CPU Trace Collection**: Start CPU sampling traces with custom duration and filters
-- **Memory Snapshots**: Capture GC heap snapshots for memory analysis
-- **Trace Session Management**: Start, stop, and manage trace sessions
-
-### Trace Analysis
-- **CPU Hotspot Analysis**: Identify CPU-intensive methods and call stacks
-- **Memory Growth Analysis**: Detect memory leaks and growth patterns
-- **Event Querying**: Query and filter ETW events with flexible criteria
-- **Trace Statistics**: Get high-level overview of trace contents
-
-### Comparison
-- **Trace Diffing**: Compare two traces to find performance regressions
-- **Heap Diffing**: Compare memory snapshots to identify growth areas
-
-### Symbol Resolution
-- **Symbol Lookup**: Resolve symbols for addresses and modules
-- **Source Navigation**: Find source file locations for methods
-
-### Reporting
-- **HTML Report Generation**: Create detailed performance reports
+AI-accessible performance analysis through the Model Context Protocol.
 
 ## Quick Start
 
-### Prerequisites
-
-- .NET 8.0 SDK or later
-- Windows OS (for ETW trace collection)
-- Administrator privileges (for kernel-mode tracing)
-
-### Building
-
 ```bash
 cd src/PerfView.MCPServer
-dotnet build
+dotnet run
 ```
 
-### Running
+The server communicates via stdin/stdout using the MCP protocol.
 
-```bash
-dotnet run --project src/PerfView.MCPServer/PerfView.MCPServer.csproj
-```
+## Configuration
 
-The server uses standard I/O (stdin/stdout) for MCP communication.
+### Claude Desktop
 
-## Configuration with Claude Desktop
-
-Add the following to your Claude Desktop configuration file:
-
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+Add to your config file (`%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
 ```json
 {
   "mcpServers": {
     "perfview": {
       "command": "dotnet",
-      "args": [
-        "run",
-        "--project",
-        "C:\\path\\to\\perfview\\src\\PerfView.MCPServer\\PerfView.MCPServer.csproj"
-      ]
+      "args": ["run", "--project", "C:\\path\\to\\perfview\\src\\PerfView.MCPServer\\PerfView.MCPServer.csproj"]
     }
   }
 }
 ```
 
+## Available Tools
+
+### 1. collect_cpu_trace
+Collects CPU sampling traces. Administrator privileges required on Windows.
+
+**Parameters:**
+- `durationSeconds` (int, default: 30): Collection duration
+- `outputPath` (string, default: "./trace.etl"): Output file path
+- `processFilter` (string, optional): Process name filter
+
+### 2. analyze_cpu_hotspots
+Analyzes CPU hotspots in a trace file.
+
+**Parameters:**
+- `tracePath` (string): Path to ETL trace file
+- `topN` (int, default: 10): Number of top methods
+- `processFilter` (string, optional): Process name filter
+
+### 3. query_events
+Queries and filters ETW events from a trace.
+
+**Parameters:**
+- `tracePath` (string): Path to trace file
+- `providerName` (string, optional): Provider filter
+- `eventName` (string, optional): Event filter
+- `limit` (int, default: 100): Max events
+
+### 4. get_trace_stats
+Gets trace file statistics.
+
+**Parameters:**
+- `tracePath` (string): Path to trace file
+
+## Common Scenarios
+
+### Scenario 1: Analyze .NET Application Performance
+
+Collect a trace with dotnet-trace, then analyze with PerfView MCP:
+
+```bash
+# 1. Collect trace with dotnet-trace
+dotnet-trace collect --process-id <PID> --duration 00:00:30 --output app.nettrace
+
+# 2. Convert to ETL (if needed)
+# PerfView can read .nettrace files directly on newer versions
+
+# 3. Ask AI to analyze
+"Analyze the CPU hotspots in app.nettrace"
+```
+
+### Scenario 2: Cross-Platform Trace Analysis
+
+Use dotnet-trace on Linux/macOS, analyze with PerfView MCP on Windows:
+
+```bash
+# On Linux/macOS - collect EventPipe trace
+dotnet-trace collect --process-id <PID> --providers Microsoft-DotNETCore-SampleProfiler
+
+# Transfer app.nettrace to Windows
+
+# On Windows - analyze with AI
+"What are the top CPU consuming methods in app.nettrace?"
+```
+
+### Scenario 3: Continuous Performance Monitoring
+
+Automated trace collection and analysis:
+
+```bash
+# 1. Collect trace periodically
+dotnet-trace collect --process-id <PID> --duration 00:01:00 --output hourly-$(date +%H).nettrace
+
+# 2. AI-assisted analysis
+"Compare hourly-10.nettrace and hourly-11.nettrace for performance changes"
+```
+
+### Scenario 4: Investigate Specific Events
+
+Target specific providers for detailed investigation:
+
+```bash
+# Collect with specific providers
+dotnet-trace collect --process-id <PID> \
+  --providers Microsoft-Windows-DotNETRuntime:0x1F000080018:5
+
+# Analyze events
+"Show me all GC events from the trace where duration > 100ms"
+```
+
+### Scenario 5: Memory Allocation Analysis
+
+Track allocations and analyze patterns:
+
+```bash
+# Collect with allocation tracking
+dotnet-trace collect --process-id <PID> \
+  --providers Microsoft-DotNETCore-SampleProfiler,Microsoft-Windows-DotNETRuntime:0x1:4
+
+# Analyze
+"What types are allocating the most memory?"
+```
+
+## dotnet-trace Integration
+
+[dotnet-trace](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-trace) is a cross-platform tool for collecting .NET traces. It works well with PerfView MCP:
+
+### Installation
+```bash
+dotnet tool install --global dotnet-trace
+```
+
+### Common Commands
+
+**List running .NET processes:**
+```bash
+dotnet-trace ps
+```
+
+**Collect trace with default providers:**
+```bash
+dotnet-trace collect --process-id <PID>
+```
+
+**Collect with CPU sampling:**
+```bash
+dotnet-trace collect --process-id <PID> --profile cpu-sampling
+```
+
+**Collect with GC events:**
+```bash
+dotnet-trace collect --process-id <PID> --profile gc-verbose
+```
+
+**Custom providers:**
+```bash
+dotnet-trace collect --process-id <PID> \
+  --providers Microsoft-Windows-DotNETRuntime:0x1CCBD:4
+```
+
+### Converting Traces
+
+dotnet-trace creates `.nettrace` files (EventPipe format). PerfView can analyze these directly, or convert to ETL:
+
+```bash
+# In PerfView GUI: File > Open > Select .nettrace file
+# Or use PerfView command line:
+PerfView.exe /convert app.nettrace
+```
+
 ## Usage Examples
 
-### Example 1: Collect and Analyze CPU Trace
+### Example 1: AI-Assisted Investigation
 
 ```
-User: Can you help me find CPU hotspots in my application?
+User: I need to find why my .NET app is slow
 
-Claude: I'll collect a CPU trace and analyze it for you.
-[Uses collect_cpu_trace tool]
-[Uses analyze_cpu_hotspots tool]
-
-The top CPU consumers are:
-1. MyApp.DataProcessor.ProcessItems - 45% CPU
-2. System.Text.Json.JsonSerializer.Deserialize - 20% CPU
-3. MyApp.Network.SendData - 15% CPU
-
-Would you like me to investigate any of these methods further?
+AI: Let me collect a trace for 30 seconds
+    [Calls collect_cpu_trace]
+    ✓ Trace collected: trace.etl (42 MB)
+    
+    Analyzing CPU hotspots...
+    [Calls analyze_cpu_hotspots]
+    
+    Top issues found:
+    1. 35% CPU - Database queries in loop
+    2. 18% CPU - JSON serialization
+    3. 12% CPU - String allocations
+    
+    Recommendation: Batch database calls and use Span<T>
 ```
 
-### Example 2: Diagnose Memory Leak
+### Example 2: Event Investigation
 
 ```
-User: My application's memory keeps growing. Can you help?
+User: Show me all exceptions in the trace
 
-Claude: Let me collect two memory snapshots and compare them.
-[Uses collect_memory_trace for baseline]
-[User runs workload]
-[Uses collect_memory_trace for comparison]
-[Uses diff_heaps tool]
-
-I found the following memory growth:
-- System.String: +5000 objects (+5 MB)
-- MyApp.Cache: +4000 objects (+25 MB)
-
-The MyApp.Cache is likely causing the leak. Would you like me to investigate retention paths?
+AI: [Calls query_events with provider filter]
+    Found 15 exception events:
+    
+    [10:23:45] System.NullReferenceException
+    [10:24:12] System.InvalidOperationException
+    ...
 ```
 
-## Tool Reference
+## Privilege Escalation
 
-### collect_cpu_trace
+**Note**: Trace collection requires administrator privileges on Windows. If you encounter permission errors, the server will provide clear instructions.
 
-Collect a CPU sampling trace.
+Future enhancement: Just-in-time privilege escalation via User Account Control (UAC) prompts when needed.
 
-**Parameters:**
-- `duration_seconds` (number): Collection duration
-- `output_path` (string): Output file path
-- `process_filter` (string, optional): Process name filter
-- `providers` (array, optional): Additional ETW providers
+## Troubleshooting
 
-**Returns:** Trace file path and statistics
+### Build Issues
+```bash
+dotnet restore
+dotnet build
+```
 
-### analyze_cpu_hotspots
+### Permission Errors
+Run terminal/PowerShell as Administrator or use `sudo` on Linux.
 
-Analyze CPU hotspots in a trace.
+### Package Issues
+Verify ModelContextProtocol 0.4.0-preview.3 is installed:
+```bash
+dotnet list package | grep ModelContextProtocol
+```
 
-**Parameters:**
-- `trace_path` (string): Path to trace file
-- `process_filter` (string, optional): Process name filter
-- `top_n` (number, default: 10): Number of top methods
+## Testing
 
-**Returns:** List of CPU-intensive methods
+### Manual Test
+```bash
+dotnet run
+# Server waits for MCP protocol messages on stdin
+```
 
-### query_events
-
-Query ETW events from a trace.
-
-**Parameters:**
-- `trace_path` (string): Path to trace file
-- `provider_name` (string, optional): ETW provider filter
-- `event_name` (string, optional): Event name filter
-- `time_range` (object, optional): Time range filter
-- `limit` (number, default: 100): Max events to return
-
-**Returns:** Filtered event list
-
-### diff_traces
-
-Compare two traces for performance differences.
-
-**Parameters:**
-- `baseline_trace` (string): Baseline trace path
-- `comparison_trace` (string): Comparison trace path
-- `metric` (string): Comparison metric (cpu, memory, events)
-
-**Returns:** Performance deltas and regressions
-
-For complete tool documentation, see [PerfViewMCPServer.md](../../documentation/PerfViewMCPServer.md).
+### With MCP Client
+Configure Claude Desktop (see Configuration section), then ask:
+- "What tools do you have for performance analysis?"
+- "Collect a 10-second CPU trace"
 
 ## Architecture
 
 ```
 AI Assistant (Claude)
-        ↓
-  MCP Protocol (JSON-RPC over stdio)
-        ↓
-PerfView.MCPServer (This project)
-        ↓
-PerfView Core Libraries
-    ├── TraceEvent (ETW parsing)
-    ├── MemoryGraph (Heap analysis)
-    └── FastSerialization (Data handling)
+      ↓ MCP Protocol (stdio)
+PerfView.MCPServer
+      ↓ TraceEvent Library
+ETW / EventPipe
 ```
 
-## Development
+## Requirements
 
-### Project Structure
+- .NET 8.0 Runtime
+- Windows 10+ (for ETW tracing)
+- Administrator privileges (for kernel tracing)
+- Linux/macOS supported for EventPipe trace analysis only
 
-```
-PerfView.MCPServer/
-├── Program.cs              # Entry point and server setup
-├── Tools/                  # MCP tool implementations
-│   ├── TraceCollectionTools.cs
-│   ├── TraceAnalysisTools.cs
-│   ├── ComparisonTools.cs
-│   ├── SymbolTools.cs
-│   └── ReportTools.cs
-└── README.md              # This file
-```
+## Documentation
 
-### Adding New Tools
-
-1. Create a new tool class in the `Tools/` directory
-2. Implement tool methods with signature: `Task<ToolResponse> ToolName(ToolRequest request)`
-3. Register the tool in `Program.cs` using `server.AddTool()`
-
-### Testing
-
-```bash
-dotnet test
-```
-
-## Roadmap
-
-- [ ] Phase 1: Core infrastructure ✅ (Complete)
-- [ ] Phase 2: Trace collection implementation
-- [ ] Phase 3: Analysis tools implementation
-- [ ] Phase 4: Advanced features (diff, symbols, reports)
-- [ ] Phase 5: Testing and documentation
-
-## Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines.
-
-## License
-
-This project is licensed under the same terms as PerfView. See [LICENSE.TXT](../../LICENSE.TXT).
+Full specification: [`documentation/PerfViewMCPServer.md`](../../documentation/PerfViewMCPServer.md)
 
 ## Support
 
-For issues and questions:
-- File an issue: https://github.com/microsoft/perfview/issues
-- Discussions: https://github.com/microsoft/perfview/discussions
-
-## Related Resources
-
-- [PerfView Documentation](../../documentation)
-- [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/)
-- [TraceEvent Library Guide](../../documentation/TraceEvent/TraceEventLibrary.md)
+- GitHub Issues: https://github.com/microsoft/perfview/issues
+- dotnet-trace docs: https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-trace
+- MCP Specification: https://spec.modelcontextprotocol.io/
