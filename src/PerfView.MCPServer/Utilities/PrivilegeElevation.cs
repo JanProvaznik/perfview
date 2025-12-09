@@ -60,7 +60,21 @@ public static class PrivilegeElevation
             return (1, "", "ERROR: TraceHelper executable not found. Build the solution first.");
         }
 
+        // On Windows with UAC, we can't capture stdout/stderr, so use a temp file for communication
+        string? resultFilePath = null;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            resultFilePath = Path.Combine(Path.GetTempPath(), $"perfview_helper_{Guid.NewGuid():N}.json");
+        }
+
         var allArgs = new[] { helperCommand }.Concat(arguments).ToArray();
+        
+        // Add result file path as the last argument on Windows
+        if (resultFilePath != null)
+        {
+            allArgs = allArgs.Append(resultFilePath).ToArray();
+        }
+        
         var argsString = string.Join(" ", allArgs.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
 
         var startInfo = new ProcessStartInfo
@@ -98,9 +112,26 @@ public static class PrivilegeElevation
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                // On Windows with UAC, we can't capture output, so wait and check file
+                // On Windows with UAC, we can't capture output, so read from result file
                 await process.WaitForExitAsync();
-                return (process.ExitCode, "", "");
+                
+                // Read result file if it exists
+                if (resultFilePath != null && File.Exists(resultFilePath))
+                {
+                    try
+                    {
+                        var resultContent = await File.ReadAllTextAsync(resultFilePath);
+                        File.Delete(resultFilePath); // Clean up
+                        return (process.ExitCode, resultContent, "");
+                    }
+                    catch
+                    {
+                        // If we can't read the file, return exit code only
+                        return (process.ExitCode, "", "Unable to read helper result file");
+                    }
+                }
+                
+                return (process.ExitCode, "", process.ExitCode != 0 ? "Elevated process failed (no output captured)" : "");
             }
             else
             {
@@ -114,10 +145,18 @@ public static class PrivilegeElevation
         catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
             // User cancelled UAC prompt
+            if (resultFilePath != null && File.Exists(resultFilePath))
+            {
+                try { File.Delete(resultFilePath); } catch { }
+            }
             return (1, "", "ERROR: User cancelled elevation prompt");
         }
         catch (Exception ex)
         {
+            if (resultFilePath != null && File.Exists(resultFilePath))
+            {
+                try { File.Delete(resultFilePath); } catch { }
+            }
             return (1, "", $"ERROR: {ex.Message}");
         }
     }

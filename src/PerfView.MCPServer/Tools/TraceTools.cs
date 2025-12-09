@@ -63,24 +63,65 @@ public class TraceTools
 
                 if (exitCode != 0)
                 {
-                    logger.LogError("Elevated trace collection failed: {Error}", stderr);
-                    return $"ERROR: Failed to collect trace with elevation.\n{stderr}\n\nIf UAC prompt was denied, approve it to allow trace collection.";
+                    // Try to parse error from result JSON
+                    string errorMessage = "Failed to collect trace with elevation";
+                    
+                    if (!string.IsNullOrEmpty(stdout))
+                    {
+                        try
+                        {
+                            var errorResult = JsonDocument.Parse(stdout);
+                            if (errorResult.RootElement.TryGetProperty("success", out var successProp) && 
+                                !successProp.GetBoolean() &&
+                                errorResult.RootElement.TryGetProperty("error", out var errorProp))
+                            {
+                                errorMessage = errorProp.GetString() ?? errorMessage;
+                            }
+                        }
+                        catch
+                        {
+                            // Not JSON, use as-is if not empty
+                            if (!string.IsNullOrWhiteSpace(stdout))
+                            {
+                                errorMessage = stdout;
+                            }
+                        }
+                    }
+                    
+                    if (!string.IsNullOrEmpty(stderr))
+                    {
+                        errorMessage += $"\n{stderr}";
+                    }
+                    
+                    logger.LogError("Elevated trace collection failed: {Error}", errorMessage);
+                    return $"ERROR: {errorMessage}\n\nIf UAC prompt was denied, approve it to allow trace collection.";
                 }
 
-                // Parse result from stdout
+                // Parse result from stdout (could be JSON directly or RESULT: prefixed line)
+                string resultJson = stdout;
                 var resultLine = stdout.Split('\n').FirstOrDefault(l => l.StartsWith("RESULT:"));
                 if (resultLine != null)
                 {
-                    var resultJson = resultLine.Substring("RESULT:".Length);
-                    var result = System.Text.Json.JsonDocument.Parse(resultJson);
-                    var root = result.RootElement;
-                    
-                    var fileSizeMb = root.GetProperty("file_size_mb").GetDouble();
-                    
-                    return $"CPU trace collected successfully (with elevation).\nFile: {absolutePath}\nSize: {fileSizeMb:F2} MB\nDuration: {durationSeconds}s\n\nUse 'analyze_cpu_hotspots' to analyze the trace.";
+                    resultJson = resultLine.Substring("RESULT:".Length);
                 }
 
-                // Fallback if we can't parse result
+                try
+                {
+                    var result = JsonDocument.Parse(resultJson);
+                    var root = result.RootElement;
+                    
+                    if (root.TryGetProperty("success", out var successProp) && successProp.GetBoolean())
+                    {
+                        var fileSizeMb = root.GetProperty("file_size_mb").GetDouble();
+                        return $"CPU trace collected successfully (with elevation).\nFile: {absolutePath}\nSize: {fileSizeMb:F2} MB\nDuration: {durationSeconds}s\n\nUse 'analyze_cpu_hotspots' to analyze the trace.";
+                    }
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning("Could not parse helper result JSON: {Error}", ex.Message);
+                }
+
+                // Fallback: check if file exists
                 var fileInfo = new FileInfo(absolutePath);
                 if (fileInfo.Exists)
                 {

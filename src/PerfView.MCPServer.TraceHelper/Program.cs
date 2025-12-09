@@ -44,7 +44,7 @@ class Program
     {
         if (args.Length < 3)
         {
-            Console.Error.WriteLine("Usage: collect-cpu <duration_seconds> <output_path> [process_filter]");
+            Console.Error.WriteLine("Usage: collect-cpu <duration_seconds> <output_path> [process_filter] [result_file_path]");
             return 1;
         }
 
@@ -55,7 +55,14 @@ class Program
         }
 
         string outputPath = args[2];
-        string? processFilter = args.Length > 3 ? args[3] : null;
+        string? processFilter = args.Length > 3 && !args[3].EndsWith(".json") ? args[3] : null;
+        string? resultFilePath = args.Length > 3 ? args[^1] : null; // Last argument might be result file
+        
+        // Check if last arg is a result file path (ends with .json)
+        if (resultFilePath != null && !resultFilePath.EndsWith(".json"))
+        {
+            resultFilePath = null; // Not a result file path
+        }
 
         try
         {
@@ -93,20 +100,70 @@ class Program
                 process_filter = processFilter
             };
 
-            // Output result as JSON for parsing
-            Console.WriteLine("RESULT:" + JsonSerializer.Serialize(result));
+            var resultJson = JsonSerializer.Serialize(result);
+            
+            // Write result to file if path provided (Windows UAC scenario)
+            if (resultFilePath != null)
+            {
+                try
+                {
+                    File.WriteAllText(resultFilePath, resultJson);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Warning: Could not write result file: {ex.Message}");
+                }
+            }
+            
+            // Also output to stdout for non-UAC scenarios
+            Console.WriteLine("RESULT:" + resultJson);
             return 0;
         }
         catch (UnauthorizedAccessException)
         {
-            Console.Error.WriteLine("ERROR: Still insufficient privileges. Run as Administrator.");
+            var errorResult = new
+            {
+                success = false,
+                error = "Still insufficient privileges. Run as Administrator.",
+                error_type = "UnauthorizedAccess"
+            };
+            
+            WriteErrorResult(errorResult, resultFilePath);
             return 1;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"ERROR: {ex.Message}");
+            var errorResult = new
+            {
+                success = false,
+                error = ex.Message,
+                error_type = ex.GetType().Name
+            };
+            
+            WriteErrorResult(errorResult, resultFilePath);
             return 1;
         }
+    }
+    
+    static void WriteErrorResult(object errorResult, string? resultFilePath)
+    {
+        var errorJson = JsonSerializer.Serialize(errorResult);
+        
+        // Write to result file if provided
+        if (resultFilePath != null)
+        {
+            try
+            {
+                File.WriteAllText(resultFilePath, errorJson);
+            }
+            catch
+            {
+                // Ignore errors writing error file
+            }
+        }
+        
+        // Also write to stderr
+        Console.Error.WriteLine($"ERROR: {errorJson}");
     }
 
     static int HandleUnknownCommand(string command)

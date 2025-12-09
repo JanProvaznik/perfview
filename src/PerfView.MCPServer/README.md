@@ -255,7 +255,9 @@ Claude: [Calls collect_cpu_trace tool]
 The server uses a separate helper executable (`PerfView.MCPServer.TraceHelper`) for privileged operations:
 - Helper is a minimal console app that only performs trace collection
 - Spawned with `runas` verb on Windows (UAC) or `sudo` on Unix
-- Communicates results back through exit codes and output files
+- **Windows**: Uses temporary result file for communication (UAC blocks stdout/stderr capture)
+- **Linux/macOS**: Uses stdout/stderr for direct communication
+- Returns structured JSON results including success status, file info, and error details
 - MCP server remains non-elevated, maintaining stdio connection
 
 ### Advantages
