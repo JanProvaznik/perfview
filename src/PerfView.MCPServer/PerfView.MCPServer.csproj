@@ -27,4 +27,18 @@
     <ProjectReference Include="..\MemoryGraph\MemoryGraph.csproj" />
   </ItemGroup>
 
+  <!-- Copy TraceHelper executable to output directory after build -->
+  <Target Name="CopyTraceHelper" AfterTargets="Build">
+    <PropertyGroup>
+      <HelperDir>$(MSBuildThisFileDirectory)..\PerfView.MCPServer.TraceHelper\bin\$(Configuration)\net8.0\</HelperDir>
+      <HelperExe Condition="'$(OS)' == 'Windows_NT'">PerfView.MCPServer.TraceHelper.exe</HelperExe>
+      <HelperExe Condition="'$(OS)' != 'Windows_NT'">PerfView.MCPServer.TraceHelper</HelperExe>
+      <HelperSource>$(HelperDir)$(HelperExe)</HelperSource>
+      <HelperDest>$(OutputPath)$(HelperExe)</HelperDest>
+    </PropertyGroup>
+    <Copy SourceFiles="$(HelperSource)" DestinationFiles="$(HelperDest)" Condition="Exists('$(HelperSource)')" />
+    <Message Text="Copied TraceHelper ($(HelperExe)) to output directory" Condition="Exists('$(HelperSource)')" Importance="high" />
+    <Warning Text="TraceHelper not found at $(HelperSource). Build PerfView.MCPServer.TraceHelper first." Condition="!Exists('$(HelperSource)')" />
+  </Target>
+
 </Project>

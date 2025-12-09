@@ -214,43 +214,57 @@ AI: [Calls query_events with provider filter]
 
 ## Privilege Escalation
 
-The server implements intelligent privilege checking:
+The server implements **automatic just-in-time privilege elevation**:
 
-### Automatic Privilege Detection
-- On startup, the server detects if running with administrator/root privileges
-- Logs privilege status to help diagnose permission issues
-- Each tool that requires elevation checks privileges before execution
+### How It Works
 
-### Just-in-Time Privilege Checking
-When you attempt to collect a trace without administrator privileges:
+When you request trace collection without administrator privileges:
 
-1. **Privilege Check**: The server checks current privilege level
-2. **Clear Instructions**: If not elevated, provides step-by-step guidance
-3. **Platform-Aware**: Different instructions for Windows (Administrator) vs Linux/macOS (sudo)
+1. **Automatic Detection**: Server detects current privilege level
+2. **UAC Elevation**: Spawns an elevated helper process (triggers UAC prompt on Windows)
+3. **Seamless Operation**: Helper performs trace collection with elevated privileges
+4. **Results Return**: Trace file is created and results returned to MCP server
 
-**Example Error Message:**
+**You don't need to run the entire MCP server as administrator!**
+
+### Platform Support
+
+- **Windows**: Uses UAC (User Account Control) to spawn elevated helper
+  - Triggers standard Windows elevation prompt
+  - User approves once per trace collection
+  
+- **Linux/macOS**: Uses sudo to spawn elevated helper
+  - May require sudo password
+  - Respects system sudo timeout
+
+### User Experience
+
 ```
-Administrator privileges are required for this operation.
+User: Collect a 30-second CPU trace
 
-To run with elevated permissions:
-1. Close your MCP client (e.g., Claude Desktop)
-2. Open a new terminal as Administrator
-3. Navigate to the PerfView.MCPServer directory
-4. Run: dotnet run
-5. Reconnect your MCP client
+Claude: [Calls collect_cpu_trace tool]
+        → Server detects non-elevated
+        → Spawns PerfView.MCPServer.TraceHelper with elevation
+        → [UAC prompt appears - user clicks Yes]
+        → Trace collection proceeds
+        → ✓ CPU trace collected successfully (with elevation)
 ```
 
-### Why Not UAC Prompts?
+### Technical Details
 
-Direct UAC-based privilege escalation (showing a UAC dialog mid-operation) is challenging in the MCP server context because:
-- The server communicates via stdin/stdout with the MCP client
-- Spawning an elevated child process breaks the communication channel
-- The MCP protocol doesn't have a standard mechanism for mid-session elevation
+The server uses a separate helper executable (`PerfView.MCPServer.TraceHelper`) for privileged operations:
+- Helper is a minimal console app that only performs trace collection
+- Spawned with `runas` verb on Windows (UAC) or `sudo` on Unix
+- Communicates results back through exit codes and output files
+- MCP server remains non-elevated, maintaining stdio connection
 
-The current implementation provides the best user experience within these constraints by:
-- Detecting privileges upfront
-- Providing clear, actionable instructions
-- Maintaining a stable MCP connection
+### Advantages
+
+✅ **No admin required**: MCP server runs as regular user  
+✅ **On-demand elevation**: Only when collecting traces  
+✅ **UAC integration**: Native Windows security prompts  
+✅ **Stable connection**: MCP client connection unaffected  
+✅ **Better security**: Minimal elevated code surface
 
 ## Troubleshooting
 

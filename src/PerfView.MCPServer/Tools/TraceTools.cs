@@ -13,6 +13,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -27,7 +28,7 @@ public class TraceTools
     private static readonly ConcurrentDictionary<string, TraceEventSession> _activeSessions = new();
 
     [McpServerTool(Name = "collect_cpu_trace")]
-    [Description("Collects a CPU sampling trace for performance analysis. Will check for administrator privileges.")]
+    [Description("Collects a CPU sampling trace for performance analysis. Automatically requests elevation if needed.")]
     public static async Task<string> CollectCpuTrace(
         ILogger<TraceTools> logger,
         [Description("Duration in seconds to collect the trace")] int durationSeconds = 30,
@@ -37,19 +38,70 @@ public class TraceTools
     {
         logger.LogInformation("Starting CPU trace collection for {Duration}s to {Path}", durationSeconds, outputPath);
 
-        // Check for administrator privileges
+        var absolutePath = Path.GetFullPath(outputPath);
+
+        // Check for administrator privileges and use elevated helper if needed
         if (!PrivilegeElevation.IsAdministrator())
         {
-            logger.LogWarning("CPU trace collection requires administrator privileges");
-            return $"ERROR: Administrator privileges required.\n\n{PrivilegeElevation.GetElevationInstructions()}";
+            logger.LogWarning("CPU trace collection requires administrator privileges, spawning elevated helper...");
+            
+            try
+            {
+                var args = new List<string>
+                {
+                    durationSeconds.ToString(),
+                    absolutePath
+                };
+                
+                if (!string.IsNullOrEmpty(processFilter))
+                {
+                    args.Add(processFilter);
+                }
+
+                var (exitCode, stdout, stderr) = await PrivilegeElevation.ExecuteElevatedAsync(
+                    "collect-cpu", args.ToArray());
+
+                if (exitCode != 0)
+                {
+                    logger.LogError("Elevated trace collection failed: {Error}", stderr);
+                    return $"ERROR: Failed to collect trace with elevation.\n{stderr}\n\nIf UAC prompt was denied, approve it to allow trace collection.";
+                }
+
+                // Parse result from stdout
+                var resultLine = stdout.Split('\n').FirstOrDefault(l => l.StartsWith("RESULT:"));
+                if (resultLine != null)
+                {
+                    var resultJson = resultLine.Substring("RESULT:".Length);
+                    var result = System.Text.Json.JsonDocument.Parse(resultJson);
+                    var root = result.RootElement;
+                    
+                    var fileSizeMb = root.GetProperty("file_size_mb").GetDouble();
+                    
+                    return $"CPU trace collected successfully (with elevation).\nFile: {absolutePath}\nSize: {fileSizeMb:F2} MB\nDuration: {durationSeconds}s\n\nUse 'analyze_cpu_hotspots' to analyze the trace.";
+                }
+
+                // Fallback if we can't parse result
+                var fileInfo = new FileInfo(absolutePath);
+                if (fileInfo.Exists)
+                {
+                    return $"CPU trace collected successfully (with elevation).\nFile: {absolutePath}\nSize: {fileInfo.Length / 1024.0 / 1024.0:F2} MB\nDuration: {durationSeconds}s\n\nUse 'analyze_cpu_hotspots' to analyze the trace.";
+                }
+
+                return "Trace collection completed but unable to verify output file.";
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to execute elevated trace collection");
+                return $"ERROR: Failed to spawn elevated helper: {ex.Message}\n\nMake sure PerfView.MCPServer.TraceHelper is built and accessible.";
+            }
         }
 
+        // We have privileges, collect directly
         TraceEventSession? session = null;
         var sessionName = $"PerfView_MCP_{Guid.NewGuid():N}";
         
         try
         {
-            var absolutePath = Path.GetFullPath(outputPath);
 
             // Create trace session
             session = new TraceEventSession(sessionName, absolutePath)
@@ -80,8 +132,8 @@ public class TraceTools
         }
         catch (UnauthorizedAccessException)
         {
-            logger.LogError("Failed to collect trace: Administrator privileges required");
-            return $"ERROR: Insufficient privileges for trace collection.\n\n{PrivilegeElevation.GetElevationInstructions()}";
+            logger.LogError("Failed to collect trace: Administrator privileges required despite check");
+            return "ERROR: Insufficient privileges for trace collection despite elevation check. This may indicate a permission issue with the trace file location.";
         }
         catch (Exception ex)
         {
